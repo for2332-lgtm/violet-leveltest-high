@@ -41,7 +41,9 @@ h1.brand{font-family:'Cormorant Garamond',serif;font-size:40px;color:var(--deepe
 .answer-strip.empty::before{content:'여기에 보기 단어를 탭해서 배치하세요';color:#B6A9C8;font-size:14px;font-family:'Noto Sans KR';}
 .tok{background:#fff;border:1.6px solid var(--deep);color:var(--deepest);border-radius:9px;padding:7px 12px;font-family:'Cormorant Garamond',serif;font-size:17px;cursor:pointer;user-select:none;position:relative;}
 .tok.changed{border-color:var(--gold);background:#FBF4E9;}
-.tok .x{font-size:11px;color:var(--mid);margin-left:5px;}
+.tok .x{font-size:14px;color:var(--mid);margin-left:7px;padding:0 3px;}
+.undo-btn{display:inline-block;margin:8px 0 2px;background:var(--soft);border:1.4px solid var(--deep);color:var(--deepest);border-radius:20px;padding:7px 14px;font-size:13.5px;font-weight:600;cursor:pointer;}
+.undo-btn:active{background:#E7D6F5;}
 .free-input{width:100%;border:1.6px solid var(--line);border-radius:12px;padding:13px 15px;font-size:18px;font-family:'Cormorant Garamond',serif;color:var(--deepest);}
 .tmenu{position:fixed;z-index:50;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(77,45,122,.22);padding:6px;display:flex;flex-direction:column;gap:3px;max-height:60vh;overflow:auto;}
 .tmenu button{background:#fff;border:none;border-radius:8px;padding:9px 15px;font-family:'Cormorant Garamond',serif;font-size:17px;color:var(--deepest);text-align:left;cursor:pointer;white-space:nowrap;}
@@ -155,6 +157,11 @@ const app = document.getElementById('app');
 const G = DATA.grammar, SE = DATA.seosul;
 const setEq=(a,b)=>{a=[...new Set(a)].sort();b=[...new Set(b)].sort();return a.length===b.length&&a.every((x,i)=>x===b[i]);};
 const MK=['①','②','③','④','⑤','⑥'];
+/* 멀티터치(확대/축소) 중에는 단어 탭이 삭제로 오작동하지 않도록 가드 */
+let PINCH=false,_pinchTO=null;
+document.addEventListener('touchstart',e=>{ if(e.touches&&e.touches.length>1){ PINCH=true; if(_pinchTO){clearTimeout(_pinchTO);_pinchTO=null;} } },{passive:true,capture:true});
+document.addEventListener('touchend',e=>{ if(e.touches&&e.touches.length===0){ if(_pinchTO)clearTimeout(_pinchTO); _pinchTO=setTimeout(()=>{PINCH=false;},150); } },{passive:true,capture:true});
+document.addEventListener('touchcancel',()=>{ if(_pinchTO)clearTimeout(_pinchTO); _pinchTO=setTimeout(()=>{PINCH=false;},150); },{passive:true,capture:true});
 
 function render(){
   window.scrollTo(0,0);
@@ -277,7 +284,8 @@ function seosul(){
   }else{
     const bank=q.bank.map((w,bi)=>`<span class="w${st.used[bi]?' used':''}" data-bi="${bi}">${esc(w)}</span>`).join('');
     const toks=st.placed.map((t,ti)=>`<span class="tok${t.changed?' changed':''}" data-ti="${ti}">${esc(t.text)}<span class="x">✕</span></span>`).join('');
-    body+=`<div class="sublabel">내 답안 · Answer</div><div class="answer-strip${st.placed.length?'':' empty'}" id="strip">${toks}</div>
+    const undoBtn = st.undo ? `<div><button class="undo-btn" id="undoBtn">↩︎ 방금 지운 &lsquo;${esc(st.undo.t.text)}&rsquo; 되돌리기</button></div>` : '';
+    body+=`<div class="sublabel">내 답안 · Answer</div><div class="answer-strip${st.placed.length?'':' empty'}" id="strip">${toks}</div>${undoBtn}
     <div class="sublabel">보기 · Word Bank</div><div class="bank" id="bank">${bank}</div>`;
   }
   app.innerHTML=`<div class="wrap">
@@ -305,17 +313,19 @@ function seosul(){
 
 function wireBank(q,st){
   [...app.querySelectorAll('#bank .w')].forEach(el=>{
-    el.onclick=()=>{ const bi=+el.dataset.bi; if(st.used[bi])return; st.used[bi]=true; st.placed.push({text:q.bank[bi],base:q.bank[bi],bankIdx:bi,changed:false}); save(); seosul(); };
+    el.onclick=()=>{ const bi=+el.dataset.bi; if(st.used[bi])return; st.used[bi]=true; st.placed.push({text:q.bank[bi],base:q.bank[bi],bankIdx:bi,changed:false}); st.undo=null; save(); seosul(); };
   });
   [...app.querySelectorAll('#strip .tok')].forEach(el=>{
     const ti=+el.dataset.ti; let clicks=0,timer=null,lp=null,moved=false;
-    const removeTok=()=>{ const t=st.placed[ti]; if(t&&t.bankIdx!=null) st.used[t.bankIdx]=false; st.placed.splice(ti,1); save(); seosul(); };
-    const openMenu=()=>{ clicks=0; showTransform(el,q,st,ti); };
+    const removeTok=()=>{ if(PINCH)return; const t=st.placed[ti]; if(!t)return; if(t.bankIdx!=null) st.used[t.bankIdx]=false; st.placed.splice(ti,1); st.undo={ti,t}; save(); seosul(); };
+    const openMenu=()=>{ if(PINCH)return; clicks=0; showTransform(el,q,st,ti); };
     el.addEventListener('pointerdown',ev=>{ moved=false; lp=setTimeout(()=>{lp=null;openMenu();},450); });
     el.addEventListener('pointermove',()=>{ moved=true; if(lp){clearTimeout(lp);lp=null;} });
     el.addEventListener('pointerup',()=>{ if(lp){clearTimeout(lp);lp=null;} });
-    el.addEventListener('click',ev=>{ if(moved)return; clicks++; if(clicks===1){ timer=setTimeout(()=>{ if(clicks===1) removeTok(); clicks=0; },260); } else { clearTimeout(timer); openMenu(); } });
+    el.addEventListener('click',ev=>{ if(moved||PINCH)return; clicks++; if(clicks===1){ timer=setTimeout(()=>{ if(clicks===1) removeTok(); clicks=0; },260); } else { clearTimeout(timer); openMenu(); } });
   });
+  const ub=document.getElementById('undoBtn');
+  if(ub) ub.onclick=()=>{ const u=st.undo; if(!u)return; const at=Math.min(Math.max(u.ti,0),st.placed.length); st.placed.splice(at,0,u.t); if(u.t.bankIdx!=null) st.used[u.t.bankIdx]=true; st.undo=null; save(); seosul(); };
 }
 
 function showTransform(el,q,st,ti){
@@ -324,7 +334,7 @@ function showTransform(el,q,st,ti){
   let opts=[]; try{ opts=variantForms(base); }catch(e){ opts=[base]; }
   if(!opts.length) opts=[base];
   const m=document.createElement('div'); m.className='tmenu';
-  opts.slice(0,12).forEach(o=>{ const b=document.createElement('button'); b.textContent=o; b.onclick=()=>{ st.placed[ti].text=o; st.placed[ti].changed=(o!==base); save(); closeMenu(); seosul(); }; m.appendChild(b); });
+  opts.slice(0,12).forEach(o=>{ const b=document.createElement('button'); b.textContent=o; b.onclick=()=>{ st.placed[ti].text=o; st.placed[ti].changed=(o!==base); st.undo=null; save(); closeMenu(); seosul(); }; m.appendChild(b); });
   document.body.appendChild(m);
   const r=el.getBoundingClientRect(); let x=r.left, y=r.bottom+6;
   const mw=m.offsetWidth, mh=m.offsetHeight;
