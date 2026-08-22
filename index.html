@@ -388,5 +388,19 @@ function result(){
 }
 
 render();
+/* 이어서 진행 중일 때 안내 (새로고침·앱전환 후에도 저장돼 있음) */
+(function(){
+  try{
+    const resuming = S && ['grammar','tutorial','seosul'].includes(S.phase) &&
+      (S.name || Object.keys(S.g||{}).length || Object.keys(S.s||{}).length);
+    if(!resuming) return;
+    const t=document.createElement('div');
+    t.textContent='↩︎ 이어서 진행 중이에요 · 지금까지 푼 내용은 저장돼 있어요';
+    t.style.cssText='position:fixed;left:50%;top:14px;transform:translate(-50%,-24px);opacity:0;transition:all .35s ease;z-index:9999;background:var(--deepest,#4D2D7A);color:#fff;font-size:13px;font-weight:600;padding:10px 18px;border-radius:22px;box-shadow:0 6px 20px rgba(77,45,122,.35);white-space:nowrap;';
+    document.body.appendChild(t);
+    setTimeout(()=>{t.style.opacity='1';t.style.transform='translate(-50%,0)';},60);
+    setTimeout(()=>{t.style.opacity='0';t.style.transform='translate(-50%,-24px)';setTimeout(()=>t.remove(),400);},3800);
+  }catch(e){}
+})();
 
 </script></body></html>
